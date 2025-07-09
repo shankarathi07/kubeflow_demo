@@ -1,0 +1,164 @@
+# PIPELINE DEFINITION
+# Name: simple-iris-pipeline-v2-final-fix
+# Description: Kubeflow Pipelines v2 with proper artifact passing
+components:
+  comp-load-and-split-data-op:
+    executorLabel: exec-load-and-split-data-op
+    outputDefinitions:
+      artifacts:
+        X_test_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        X_train_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        y_test_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        y_train_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-train-and-evaluate-op:
+    executorLabel: exec-train-and-evaluate-op
+    inputDefinitions:
+      artifacts:
+        X_test_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        X_train_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        y_test_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        y_train_path:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-load-and-split-data-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - load_and_split_data_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'scikit-learn'\
+          \ 'pandas' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef load_and_split_data_op(\n    X_train_path: dsl.OutputPath(),\n\
+          \    X_test_path: dsl.OutputPath(),\n    y_train_path: dsl.OutputPath(),\n\
+          \    y_test_path: dsl.OutputPath(),\n):\n    import pandas as pd\n    from\
+          \ sklearn.datasets import load_iris\n    from sklearn.model_selection import\
+          \ train_test_split\n\n    iris = load_iris()\n    X_train, X_test, y_train,\
+          \ y_test = train_test_split(\n        iris.data, iris.target, test_size=0.2,\
+          \ random_state=42\n    )\n\n    pd.DataFrame(X_train).to_csv(X_train_path,\
+          \ index=False)\n    pd.DataFrame(X_test).to_csv(X_test_path, index=False)\n\
+          \    pd.DataFrame(y_train).to_csv(y_train_path, index=False)\n    pd.DataFrame(y_test).to_csv(y_test_path,\
+          \ index=False)\n\n    print(\"\u2705 Data loaded and split successfully.\"\
+          )\n\n"
+        image: python:3.9
+    exec-train-and-evaluate-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_and_evaluate_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'scikit-learn'\
+          \ 'pandas' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_and_evaluate_op(\n    X_train_path: dsl.InputPath(),\n\
+          \    X_test_path: dsl.InputPath(),\n    y_train_path: dsl.InputPath(),\n\
+          \    y_test_path: dsl.InputPath(),\n):\n    import pandas as pd\n    from\
+          \ sklearn.ensemble import RandomForestClassifier\n\n    X_train = pd.read_csv(X_train_path)\n\
+          \    y_train = pd.read_csv(y_train_path)\n    X_test = pd.read_csv(X_test_path)\n\
+          \    y_test = pd.read_csv(y_test_path)\n\n    model = RandomForestClassifier()\n\
+          \    model.fit(X_train, y_train.values.ravel())\n    acc = model.score(X_test,\
+          \ y_test.values.ravel())\n    print(f\"\u2705 Model Accuracy: {acc}\")\n\
+          \n"
+        image: python:3.9
+pipelineInfo:
+  description: Kubeflow Pipelines v2 with proper artifact passing
+  name: simple-iris-pipeline-v2-final-fix
+root:
+  dag:
+    tasks:
+      load-and-split-data-op:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-load-and-split-data-op
+        taskInfo:
+          name: load-and-split-data-op
+      train-and-evaluate-op:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-and-evaluate-op
+        dependentTasks:
+        - load-and-split-data-op
+        inputs:
+          artifacts:
+            X_test_path:
+              taskOutputArtifact:
+                outputArtifactKey: X_test_path
+                producerTask: load-and-split-data-op
+            X_train_path:
+              taskOutputArtifact:
+                outputArtifactKey: X_train_path
+                producerTask: load-and-split-data-op
+            y_test_path:
+              taskOutputArtifact:
+                outputArtifactKey: y_test_path
+                producerTask: load-and-split-data-op
+            y_train_path:
+              taskOutputArtifact:
+                outputArtifactKey: y_train_path
+                producerTask: load-and-split-data-op
+        taskInfo:
+          name: train-and-evaluate-op
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.13.0
