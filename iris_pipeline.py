@@ -1,30 +1,35 @@
 import kfp
 from kfp import dsl
 
+# Define constants for the pipeline
+TEST_SIZE = 0.2
+RANDOM_STATE = 42
+
 @dsl.component(
     base_image='python:3.9',
     packages_to_install=['scikit-learn', 'pandas']
 )
 def load_and_split_data_op(
-    X_train_path: dsl.OutputPath(),
-    X_test_path: dsl.OutputPath(),
+    x_train_path: dsl.OutputPath(),
+    x_test_path: dsl.OutputPath(),
     y_train_path: dsl.OutputPath(),
     y_test_path: dsl.OutputPath(),
 ):
+    """
+    Loads the Iris dataset, splits it into training and testing sets,
+    and saves them as CSV files.
+    """
     import pandas as pd
     from sklearn.datasets import load_iris
     from sklearn.model_selection import train_test_split
 
-    #load iris dataset
     iris = load_iris()
-
-    #split data using 20% of dataset and ensure consistency with test and training data
-    X_train, X_test, y_train, y_test = train_test_split(
-        iris.data, iris.target, test_size=0.2, random_state=42
+    x_train, x_test, y_train, y_test = train_test_split(
+        iris.data, iris.target, test_size=TEST_SIZE, random_state=RANDOM_STATE
     )
 
-    pd.DataFrame(X_train).to_csv(X_train_path, index=False)
-    pd.DataFrame(X_test).to_csv(X_test_path, index=False)
+    pd.DataFrame(x_train).to_csv(x_train_path, index=False)
+    pd.DataFrame(x_test).to_csv(x_test_path, index=False)
     pd.DataFrame(y_train).to_csv(y_train_path, index=False)
     pd.DataFrame(y_test).to_csv(y_test_path, index=False)
 
@@ -35,42 +40,48 @@ def load_and_split_data_op(
     packages_to_install=['scikit-learn', 'pandas']
 )
 def train_and_evaluate_op(
-    X_train_path: dsl.InputPath(),
-    X_test_path: dsl.InputPath(),
+    x_train_path: dsl.InputPath(),
+    x_test_path: dsl.InputPath(),
     y_train_path: dsl.InputPath(),
     y_test_path: dsl.InputPath(),
 ):
+    """
+    Trains a RandomForestClassifier on the training data and evaluates it on the test data.
+    """
     import pandas as pd
     from sklearn.ensemble import RandomForestClassifier
 
-    X_train = pd.read_csv(X_train_path)
+    x_train = pd.read_csv(x_train_path)
     y_train = pd.read_csv(y_train_path)
-    X_test = pd.read_csv(X_test_path)
+    x_test = pd.read_csv(x_test_path)
     y_test = pd.read_csv(y_test_path)
 
-    #creates a Random Forest classifier, trains it on the training data, and then calculates its accuracy on the test data
+    # Initialize and train the model
     model = RandomForestClassifier()
-    model.fit(X_train, y_train.values.ravel())
-    acc = model.score(X_test, y_test.values.ravel())
-    print(f"✅ Model Accuracy: {acc}")
+    model.fit(x_train, y_train.values.ravel())
+
+    # Evaluate the model
+    accuracy = model.score(x_test, y_test.values.ravel())
+    print(f"✅ Model Accuracy: {accuracy}")
 
 @dsl.pipeline(
-    name="Simple Iris Pipeline v2 final fix",
-    description="Kubeflow Pipelines v2 with proper artifact passing"
+    name="Iris Classification Pipeline",
+    description="A simple pipeline that trains a classifier on the Iris dataset."
 )
 def iris_pipeline():
-    split = load_and_split_data_op()
+    """Defines the Iris classification pipeline."""
+    split_task = load_and_split_data_op()
     train_and_evaluate_op(
-        X_train_path=split.outputs['X_train_path'],
-        X_test_path=split.outputs['X_test_path'],
-        y_train_path=split.outputs['y_train_path'],
-        y_test_path=split.outputs['y_test_path']
+        x_train_path=split_task.outputs['x_train_path'],
+        x_test_path=split_task.outputs['x_test_path'],
+        y_train_path=split_task.outputs['y_train_path'],
+        y_test_path=split_task.outputs['y_test_path']
     )
 
-#create yaml file for Kubeflow 
 if __name__ == '__main__':
+    # Compile the pipeline to a YAML file for Kubeflow
     kfp.compiler.Compiler().compile(
         pipeline_func=iris_pipeline,
-        package_path='iris_pipeline_v2_final.yaml'
+        package_path='iris_pipeline.yaml'
     )
 
